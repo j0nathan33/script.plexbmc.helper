@@ -34,7 +34,7 @@ import urllib2
 
 class plexgdm:
 
-    def __init__(self, debug=0):
+    def __init__(self, debug=False):
         
         self.discover_message = 'M-SEARCH * HTTP/1.0'
         self.client_header = '* HTTP/1.0'
@@ -57,7 +57,8 @@ class plexgdm:
         self.debug = debug
 
     def __printDebug(self, message, level=1):
-        print "PlexGDM: %s" % message
+        if self.debug:
+            print "PlexGDM: %s" % message
 
     def clientDetails(self, c_id, c_name, c_post, c_product, c_version):
         self.client_data = "Content-Type: plex/media-player\r\nResource-Identifier: %s\r\nName: %s\r\nPort: %s\r\nProduct: %s\r\nVersion: %s\r\nProtocol: plex\r\nProtocol-Version: 1\r\nProtocol-Capabilities: navigation,playback,timeline\r\nDevice-Class: HTPC" % ( c_id, c_name, c_post, c_product, c_version )
@@ -187,6 +188,10 @@ class plexgdm:
                                          'data' : data } )
                 except socket.timeout:
                     break
+        except:
+            # if we can't send our discovery query, just abort and try again
+            # on the next loop
+            return
         finally:
             sock.close()
 
