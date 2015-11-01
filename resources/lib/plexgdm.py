@@ -34,7 +34,7 @@ import urllib2
 
 class plexgdm:
 
-    def __init__(self, debug=False):
+    def __init__(self, debug=0):
         
         self.discover_message = 'M-SEARCH * HTTP/1.0'
         self.client_header = '* HTTP/1.0'
@@ -57,8 +57,7 @@ class plexgdm:
         self.debug = debug
 
     def __printDebug(self, message, level=1):
-        if self.debug:
-            print "PlexGDM: %s" % message
+        print "PlexGDM: %s" % message
 
     def clientDetails(self, c_id, c_name, c_post, c_product, c_version):
         self.client_data = "Content-Type: plex/media-player\r\nResource-Identifier: %s\r\nName: %s\r\nPort: %s\r\nProduct: %s\r\nVersion: %s\r\nProtocol: plex\r\nProtocol-Version: 1\r\nProtocol-Capabilities: navigation,playback,timeline\r\nDevice-Class: HTPC" % ( c_id, c_name, c_post, c_product, c_version )
@@ -71,61 +70,64 @@ class plexgdm:
         return self.client_data
 
     def client_update (self):
-        update_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        
-        #Set socket reuse, may not work on all OSs.
-        try:
-            update_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-        except:
-            pass
-        
-        #Attempt to bind to the socket to recieve and send data.  If we can;t do this, then we cannot send registration
-        try:
-            update_sock.bind(('0.0.0.0',self.client_update_port))
-        except:
-            self.__printDebug( "Error: Unable to bind to port [%s] - client will not be registered" % self.client_update_port, 0)
-            return    
-        
-        update_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
-        status = update_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(self._multicast_address) + socket.inet_aton('0.0.0.0'))
-        update_sock.setblocking(0)
-        self.__printDebug("Sending registration data: HELLO %s\r\n%s" % (self.client_header, self.client_data), 3)
-        
-        #Send initial client registration
-        try:
-            update_sock.sendto("HELLO %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
-        except:
-            self.__printDebug( "Error: Unable to send registeration message" , 0)
-        
-        #Now, listen for client discovery reguests and respond.
-        while self._registration_is_running:
+        while not self.discovery_complete:
+            time.sleep(0.5)
+        for response in self.server_list:
+            update_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            
+            #Set socket reuse, may not work on all OSs.
             try:
-                data, addr = update_sock.recvfrom(1024)
-                self.__printDebug("Recieved UDP packet from [%s] containing [%s]" % (addr, data.strip()), 3)
-            except socket.error, e:
+                update_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            except:
                 pass
-            else:
-                if "M-SEARCH * HTTP/1." in data:
-                    self.__printDebug("Detected client discovery request from %s.  Replying" % ( addr ,) , 2)
-                    try:
-                        update_sock.sendto("HTTP/1.0 200 OK\r\n%s" % self.client_data, addr)
-                    except:
-                        self.__printDebug( "Error: Unable to send client update message",0)
-                    
-                    self.__printDebug("Sending registration data: HTTP/1.0 200 OK\r\n%s" % (self.client_data), 3)
-                    self.client_registered = True
-            time.sleep(0.5)        
+            
+            #Attempt to bind to the socket to recieve and send data.  If we can;t do this, then we cannot send registration
+            try:
+                update_sock.bind((response.get("server"),self.client_update_port))
+            except:
+                self.__printDebug( "Error: Unable to bind to port [%s] - client will not be registered" % self.client_update_port, 0)
+                continue    
+            
+            update_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
+            status = update_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(self._multicast_address) + socket.inet_aton('0.0.0.0'))
+            update_sock.setblocking(0)
+            self.__printDebug("Sending registration data: HELLO %s\r\n%s" % (self.client_header, self.client_data), 3)
+            
+            #Send initial client registration
+            try:
+                update_sock.sendto("HELLO %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
+            except:
+                self.__printDebug( "Error: Unable to send registeration message" , 0)
+            
+            #Now, listen for client discovery reguests and respond.
+            while self._registration_is_running:
+                try:
+                    data, addr = update_sock.recvfrom(1024)
+                    self.__printDebug("Recieved UDP packet from [%s] containing [%s]" % (addr, data.strip()), 3)
+                except socket.error, e:
+                    pass
+                else:
+                    if "M-SEARCH * HTTP/1." in data:
+                        self.__printDebug("Detected client discovery request from %s.  Replying" % ( addr ,) , 2)
+                        try:
+                            update_sock.sendto("HTTP/1.0 200 OK\r\n%s" % self.client_data, addr)
+                        except:
+                            self.__printDebug( "Error: Unable to send client update message",0)
+                        
+                        self.__printDebug("Sending registration data: HTTP/1.0 200 OK\r\n%s" % (self.client_data), 3)
+                        self.client_registered = True
+                time.sleep(0.5)        
 
-        self.__printDebug("Client Update loop stopped",1)
-        
-        #When we are finished, then send a final goodbye message to deregister cleanly.
-        self.__printDebug("Sending registration data: BYE %s\r\n%s" % (self.client_header, self.client_data), 3)
-        try:
-            update_sock.sendto("BYE %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
-        except:
-            self.__printDebug( "Error: Unable to send client update message" ,0)
-                       
-        self.client_registered = False
+            self.__printDebug("Client Update loop stopped",1)
+            
+            #When we are finished, then send a final goodbye message to deregister cleanly.
+            self.__printDebug("Sending registration data: BYE %s\r\n%s" % (self.client_header, self.client_data), 3)
+            try:
+                update_sock.sendto("BYE %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
+            except:
+                self.__printDebug( "Error: Unable to send client update message" ,0)
+                           
+            self.client_registered = False
                            
     def check_client_registration(self):
         
@@ -185,14 +187,8 @@ class plexgdm:
                                          'data' : data } )
                 except socket.timeout:
                     break
-        except:
-            # if we can't send our discovery query, just abort and try again
-            # on the next loop
-            return
         finally:
             sock.close()
-
-        self.discovery_complete = True
 
         discovered_servers = []
 
@@ -231,6 +227,8 @@ class plexgdm:
 
         self.server_list = discovered_servers
         
+        self.discovery_complete = True
+
         if not self.server_list:
             self.__printDebug("No servers have been discovered",1)
         else:
