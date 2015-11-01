@@ -94,15 +94,11 @@ class plexgdm:
             update_sock.setblocking(0)
             self.__printDebug("Sending registration data: HELLO %s\r\n%s" % (self.client_header, self.client_data), 3)
             
-            #Send initial client registration
-            try:
-                update_sock.sendto("HELLO %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
-            except:
-                self.__printDebug( "Error: Unable to send registeration message" , 0)
-            
             #Now, listen for client discovery reguests and respond.
             while self._registration_is_running:
                 try:
+                    #Send initial client registration
+                    update_sock.sendto("HELLO %s\r\n%s" % (self.client_header, self.client_data), self.client_register_group)
                     data, addr = update_sock.recvfrom(1024)
                     self.__printDebug("Recieved UDP packet from [%s] containing [%s]" % (addr, data.strip()), 3)
                 except socket.error, e:
